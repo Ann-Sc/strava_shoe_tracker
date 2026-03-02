@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 from stravalib.client import Client
 from datetime import datetime
 
+
 # --- Load secrets ---
 CLIENT_ID = os.environ["STRAVA_CLIENT_ID"]
 CLIENT_SECRET = os.environ["STRAVA_CLIENT_SECRET"]
@@ -44,19 +45,19 @@ for i in activities[start_index:]:
     total_miles += act.distance.num 
 
 # --- Prepare email message ---
-#if total_miles < 400:
-#    message = f"You have run {total_miles:.1f} miles in your current shoes."
-#else:
-#    message = f"Woohoo! You hit {total_miles:.1f} miles! Time to buy new shoes!!"
+if total_miles < 400:
+    message = f"You have run {total_miles:.1f} miles in your current shoes."
+else:
+    message = f"Woohoo! You hit {total_miles:.1f} miles! Time to buy new shoes!!"
 
 # --- Send email ---
-#msg = MIMEText(message)
-#msg["Subject"] = "Shoe Mileage Update"
-#msg["From"] = EMAIL_ADDRESS
-#msg["To"] = RECIPIENT
+msg = MIMEText(message)
+msg["Subject"] = "Shoe Mileage Update"
+msg["From"] = EMAIL_ADDRESS
+msg["To"] = RECIPIENT
 
-#with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-#    server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-#    server.send_message(msg)
+with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+    server.send_message(msg)
 
-#print("✅ Email sent.")
+print("Email sent.")

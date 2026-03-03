@@ -2,31 +2,32 @@ name: Biweekly Shoe Mileage Tracker
 
 on:
   schedule:
-    # Runs at 00:00 on the 1st and 15th of every month
+    # Runs at 00:00 every 1st and 15th of the month
     - cron: '0 0 1,15 * *'
   workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Required to allow the bot to push the updated shoe_data.json back to your repo
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
+        with:
+          # This ensures we have permission to push back to the repo
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests resend
 
-      - name: Run script
+      - name: Run shoe tracker
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
           STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
@@ -34,10 +35,12 @@ jobs:
           RESEND_KEY: ${{ secrets.RESEND_KEY }}
         run: python biweekly_shoe_mileage.py
 
-      - name: Commit and push shoe_data.json
+      - name: Commit and push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add shoe_data.json
-          git commit -m "Automated mileage update [skip ci]" || echo "No changes to commit"
+          # The -f flag forces git to add shoe_data.json even if it is in .gitignore
+          git add -f shoe_data.json
+          # Only commit if the file actually changed; [skip ci] prevents loops
+          git commit -m "Update shoe mileage data [skip ci]" || echo "No changes to commit"
           git push

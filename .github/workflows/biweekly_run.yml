@@ -1,0 +1,43 @@
+name: Biweekly Shoe Mileage Tracker
+
+on:
+  schedule:
+    # Runs at 00:00 on the 1st and 15th of every month
+    - cron: '0 0 1,15 * *'
+  workflow_dispatch: # Allows you to run it manually for testing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Required to allow the bot to push the updated shoe_data.json back to your repo
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests resend
+
+      - name: Run script
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
+          RESEND_KEY: ${{ secrets.RESEND_KEY }}
+        run: python biweekly_shoe_mileage.py
+
+      - name: Commit and push shoe_data.json
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add shoe_data.json
+          git commit -m "Automated mileage update [skip ci]" || echo "No changes to commit"
+          git push

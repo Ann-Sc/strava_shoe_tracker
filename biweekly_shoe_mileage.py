@@ -1,63 +1,127 @@
-#automatic for github
 import os
-import smtplib
+import requests
+import json
+from datetime import datetime, timezone
 from email.mime.text import MIMEText
-from stravalib.client import Client
-from datetime import datetime
+import resend
 
-
-# --- Load secrets ---
+# ====================================================
+# Loading secrets from environment
+# ====================================================
 CLIENT_ID = os.environ["STRAVA_CLIENT_ID"]
 CLIENT_SECRET = os.environ["STRAVA_CLIENT_SECRET"]
 REFRESH_TOKEN = os.environ["STRAVA_REFRESH_TOKEN"]
 
-EMAIL_ADDRESS = os.environ["EMAIL_ADDRESS"]
-EMAIL_PASSWORD = os.environ["EMAIL_PASSWORD"]
-RECIPIENT = os.environ["RECIPIENT_EMAIL"]
-
 KEYWORD = "new shoes"  # activity name marking start of current shoes
+STORE_FILE = "shoe_data.json"
 
-# --- Initialize Strava client ---
-client = Client()
-
-token_response = client.refresh_access_token(
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    refresh_token=REFRESH_TOKEN
+# ====================================================
+# Refreshing Strava access token
+# ====================================================
+token_response = requests.post(
+    "https://www.strava.com/oauth/token",
+    data={
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "refresh_token",
+        "refresh_token": REFRESH_TOKEN
+    }
 )
-client.access_token = token_response["access_token"]
+tokens = token_response.json()
+access_token = tokens["access_token"]
 
+# ====================================================
+# Loading previous state (if it exists)
+# ====================================================
+if os.path.exists(STORE_FILE):
+    with open(STORE_FILE, "r") as f:
+        data = json.load(f)
+        last_activity_date = datetime.fromisoformat(data.get("last_activity_date"))
+        last_new_shoes_date = datetime.fromisoformat(data.get("last_new_shoes_date"))
+        total_miles = data.get("miles", 0)
+else:
+    # First run defaults
+    last_activity_date = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    last_new_shoes_date = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    total_miles = 0
 
-# Pull only running activities (most recent 200)
-activities = list(client.get_activities(limit=200, activity_type='Run'))
-activities.sort(key=lambda x: x.start_date_local)  # oldest → newest
+after_timestamp = int(last_activity_date.timestamp())
 
-# --- Find start index of current shoes ---
-start_index = 0
-for idx, act in enumerate(activities):
-    if KEYWORD.lower() in act.name.lower():
-        start_index = idx
+# ====================================================
+# Fetching new activities after last_activity_date
+# ====================================================
+runs = []
+page = 1
+per_page = 200
+
+while True:
+    response = requests.get(
+        "https://www.strava.com/api/v3/athlete/activities",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={
+            "per_page": per_page,
+            "page": page,
+            "after": after_timestamp
+        }
+    )
+    activities_page = response.json()
+    if not activities_page:
         break
 
-# --- Sum miles since start_index ---
-total_miles = 0
-for i in activities[start_index:]:
-    total_miles += act.distance.num 
+    # Filter only runs
+    for act in activities_page:
+        if act["type"] == "Run":
+            runs.append(act)
 
-# --- Prepare email message ---
+    page += 1
+
+# ====================================================
+# Processing new runs
+# ====================================================
+for act in runs:
+    act_date = datetime.fromisoformat(act["start_date"])
+    
+    # Check for new "new shoes" activity
+    if KEYWORD in act["name"].lower():
+        total_miles = act["distance"] / 1609.34  # reset mileage including this new shoes run mileage
+        last_new_shoes_date = act_date  # start counting from this activity
+    elif act_date > last_new_shoes_date:
+        # Only add runs after the last "new shoes" run
+        total_miles += act["distance"] / 1609.34  # meters → miles
+
+# ====================================================
+# Updating last_activity_date
+# ====================================================
+if runs:
+    newest_run_date = datetime.fromisoformat(runs[-1]["start_date"])
+    if newest_run_date > last_activity_date:
+        last_activity_date = newest_run_date
+
+# ====================================================
+# Compiling message and sending email
+# ====================================================
 if total_miles < 400:
-    message = f"You have run {total_miles:.1f} miles in your current shoes."
+    message = f"You've run {round(total_miles, 2)} miles in your current shoes :)"
 else:
-    message = f"Woohoo! You hit {total_miles:.1f} miles! Time to buy new shoes!!"
+    message = f"You hit {round(total_miles, 2)} miles! Time to buy new shoes!"
 
-# --- Send email ---
-msg = MIMEText(message)
-msg["Subject"] = "Shoe Mileage Update"
-msg["From"] = EMAIL_ADDRESS
-msg["To"] = RECIPIENT
+RESEND_KEY = os.environ["RESEND_KEY"]
+resend.api_key = RESEND_KEY
 
-with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-    server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
-    server.send_message(msg)
+r = resend.Emails.send({
+  "from": "onboarding@resend.dev",
+  "to": "annp.scruggs@gmail.com",
+  "subject": "Shoe Mileage Update",
+  "html": message
+})
 
-print("Email sent.")
+
+# ====================================================
+# Saving updated state
+# ====================================================
+with open(STORE_FILE, "w") as f:
+    json.dump({
+        "last_activity_date": last_activity_date.isoformat(),
+        "last_new_shoes_date": last_new_shoes_date.isoformat(),
+        "miles": total_miles
+    }, f)

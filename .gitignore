@@ -1,0 +1,13 @@
+# Secrets and environment variables
+.env
+.venv/
+env/
+secrets.py
+
+# Local data state
+shoe_data.json
+tokens.json
+
+# Python cache files
+__pycache__/
+*.py[cod]

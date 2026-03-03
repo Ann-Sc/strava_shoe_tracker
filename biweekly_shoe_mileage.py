@@ -18,6 +18,7 @@ STORE_FILE = "shoe_data.json"
 # ====================================================
 # Refreshing Strava access token
 # ====================================================
+print("Refreshing Strava access token...")
 token_response = requests.post(
     "https://www.strava.com/oauth/token",
     data={
@@ -27,7 +28,14 @@ token_response = requests.post(
         "refresh_token": REFRESH_TOKEN
     }
 )
+
 tokens = token_response.json()
+
+# Safety check: Ensure we actually got a token back
+if "access_token" not in tokens:
+    print(f"Error refreshing token: {tokens}")
+    exit(1)
+
 access_token = tokens["access_token"]
 
 # ====================================================
